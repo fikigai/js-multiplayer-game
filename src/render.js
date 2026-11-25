@@ -3,6 +3,7 @@ function lerp(a, b, alpha) {
 }
 
 function lerpWrap(a, b, alpha, max) {
+	if (max <= 0) return b;
 	let diff = b - a;
 	if (diff > max / 2) diff -= max;
 	if (diff < -max / 2) diff += max;
@@ -29,6 +30,22 @@ export function createRenderer(canvas) {
 	resize();
 	window.addEventListener("resize", resize);
 
+	function getInterpPos(entity, alpha) {
+		if (!entity.wrapBounds) {
+			return {
+				x: lerp(entity.prevPos.x, entity.pos.x, alpha),
+				y: lerp(entity.prevPos.y, entity.pos.y, alpha),
+				angle: lerp(entity.prevAngle, entity.angle, alpha),
+			};
+		}
+
+		return {
+			x: lerpWrap(entity.prevPos.x, entity.pos.x, alpha, bounds.width),
+			y: lerpWrap(entity.prevPos.y, entity.pos.y, alpha, bounds.height),
+			angle: lerp(entity.prevAngle, entity.angle, alpha),
+		};
+	}
+
 	function drawGrid() {
 		const step = 48;
 		ctx.strokeStyle = "rgba(255, 255, 255, 0.05)";
@@ -51,7 +68,6 @@ export function createRenderer(canvas) {
 		ctx.translate(x, y);
 		ctx.rotate(angle);
 
-		// Полум'я двигуна при прискоренні
 		if (thrusting) {
 			ctx.beginPath();
 			ctx.moveTo(-12, -5);
@@ -62,7 +78,6 @@ export function createRenderer(canvas) {
 			ctx.fill();
 		}
 
-		// Корпус корабля (стрілка дивиться вздовж +X)
 		ctx.beginPath();
 		ctx.moveTo(18, 0);
 		ctx.lineTo(-12, -11);
@@ -79,31 +94,117 @@ export function createRenderer(canvas) {
 		ctx.restore();
 	}
 
-	function drawHud(stats) {
+	function drawAsteroid(entity, x, y, angle) {
 		ctx.save();
-		ctx.fillStyle = "rgba(0, 0, 0, 0.55)";
-		ctx.fillRect(12, 12, 185, 76);
+		ctx.translate(x, y);
+		ctx.rotate(angle);
+
+		const sides = 8;
+		ctx.beginPath();
+		for (let i = 0; i < sides; i++) {
+			const a = (Math.PI * 2 * i) / sides;
+			const r = entity.radius * (i % 2 === 0 ? 1 : 0.78);
+			const px = Math.cos(a) * r;
+			const py = Math.sin(a) * r;
+			if (i === 0) ctx.moveTo(px, py);
+			else ctx.lineTo(px, py);
+		}
+		ctx.closePath();
+
+		ctx.fillStyle = "#2b2d42";
+		ctx.fill();
+		ctx.lineWidth = 2;
+		ctx.strokeStyle = "#8d99ae";
+		ctx.stroke();
+
+		ctx.restore();
+	}
+
+	function drawBullet(entity, x, y) {
+		ctx.save();
+		ctx.beginPath();
+		ctx.arc(x, y, entity.radius, 0, Math.PI * 2);
+		ctx.fillStyle = entity.homing ? "#ffbe0b" : "#4cc9f0";
+		ctx.fill();
+		ctx.restore();
+	}
+
+	function drawPickup(entity, x, y) {
+		ctx.save();
+		ctx.translate(x, y);
+
+		ctx.beginPath();
+		ctx.arc(0, 0, entity.radius, 0, Math.PI * 2);
+		ctx.fillStyle = "rgba(29, 185, 84, 0.22)";
+		ctx.fill();
+		ctx.lineWidth = 2;
+		ctx.strokeStyle = "#1db954";
+		ctx.stroke();
+
+		// Хрестик лікування всередині pickup
+		ctx.strokeStyle = "#e8f5e9";
+		ctx.beginPath();
+		ctx.moveTo(-5, 0);
+		ctx.lineTo(5, 0);
+		ctx.moveTo(0, -5);
+		ctx.lineTo(0, 5);
+		ctx.stroke();
+
+		ctx.restore();
+	}
+
+	function drawParticle(entity, x, y) {
+		const alpha = entity.ttl > 0 ? entity.life / entity.ttl : 0;
+		ctx.save();
+		ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
+		ctx.beginPath();
+		ctx.arc(x, y, entity.radius, 0, Math.PI * 2);
+		ctx.fillStyle = entity.color;
+		ctx.fill();
+		ctx.restore();
+	}
+
+	function drawHud(stats, hudState) {
+		ctx.save();
+		ctx.fillStyle = "rgba(0, 0, 0, 0.65)";
+		ctx.fillRect(12, 12, 210, 116);
 
 		ctx.font = "13px monospace";
 		ctx.fillStyle = "#e0e0e0";
 		ctx.fillText(`steps/s:  ${stats.sps}`, 22, 34);
-		ctx.fillText(`frames/s: ${stats.fps}`, 22, 54);
-		ctx.fillText(`frame:    ${stats.frameMs.toFixed(2)} ms`, 22, 74);
+		ctx.fillText(`frames/s: ${stats.fps}`, 22, 52);
+		ctx.fillText(`frame:    ${stats.frameMs.toFixed(2)} ms`, 22, 70);
+		ctx.fillStyle = "#1db954";
+		ctx.fillText(`score:    ${hudState.score}`, 22, 92);
+		ctx.fillStyle = hudState.hp > 30 ? "#e8f5e9" : "#ef476f";
+		ctx.fillText(`hp:       ${hudState.hp}`, 22, 112);
 		ctx.restore();
 	}
 
-	function render(prevShip, currShip, alpha, stats) {
+	function render(world, alpha, stats, hudState) {
 		ctx.fillStyle = "#121212";
 		ctx.fillRect(0, 0, bounds.width, bounds.height);
 
 		drawGrid();
 
-		const x = lerpWrap(prevShip.x, currShip.x, alpha, bounds.width);
-		const y = lerpWrap(prevShip.y, currShip.y, alpha, bounds.height);
-		const angle = lerp(prevShip.angle, currShip.angle, alpha);
+		for (const entity of world) {
+			if (!entity.alive) continue;
+			const { x, y, angle } = getInterpPos(entity, alpha);
 
-		drawShip(x, y, angle, currShip.thrusting);
-		drawHud(stats);
+			if (entity.kind === "asteroid") {
+				drawAsteroid(entity, x, y, angle);
+			} else if (entity.kind === "bullet") {
+				drawBullet(entity, x, y);
+			} else if (entity.kind === "pickup") {
+				drawPickup(entity, x, y);
+			} else if (entity.kind === "particle") {
+				drawParticle(entity, x, y);
+			} else if (entity.kind === "ship") {
+				drawShip(x, y, angle, Boolean(entity.input?.getState().thrust));
+			}
+		}
+
+		drawHud(stats, hudState);
 	}
 
 	function destroy() {

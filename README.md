@@ -54,3 +54,56 @@ JavaScript виконується в одному потоці (single-threaded 
 
 - Симуляція стає недетермінованою: на 60 Гц і 165 Гц інтегрування дає різні похибки округлення та різні траєкторії.
 - Якщо головний потік заблокується (спайк лагу або перемикання вкладки), наступний `dt` стає величезним (наприклад, 0.5–2 с), і за один крок об'єкт «перестрибує» половину арени (тунелювання крізь колізії в майбутніх лабах).
+
+---
+
+## Lab 02 — Об'єкти, прототипи та `this`
+
+### 1. Баг і фікс `this` при передачі `ship.fire` у слухач подій
+
+**Що ламається наївно:**
+Якщо передати метод напряму як колбек — `window.addEventListener("keydown", ship.fire)` — у JavaScript спрацьовує правило втрати контексту при виклику як «голої» функції: всередині `fire()` значення `this` стає `undefined` (у strict mode / ES-модулях) або `window`. Звернення до `this.alive`, `this.#hp` чи `this.pos` падає з `TypeError`.
+
+**Як виправили в проєкті:**
+
+- У `Ship.update(dt, world)` метод викликається як метод екземпляра (`this.fire(world)`), де `this` жорстко прив'язаний до конкретного корабля.
+- Стан клавіш інкапсульований у замиканні `createInput()`, а `fire` приймає `world` аргументом.
+
+**Інші способи зафіксувати `this`:**
+
+1. **Стрілкова функція-обгортка:** `() => ship.fire(world)` — стрілкові функції не мають власного `this` і беруть його з лексичного оточення.
+2. **`.bind(ship)`:** `ship.fire.bind(ship)` — створює нову функцію з постійно прив'язаним `this`.
+3. **Поле-стрілка в класі:** `fire = (world) => { ... }` — прив'язується до екземпляра під час створення об'єкта (створює окрему функцію на кожен екземпляр замість методу на прототипі).
+
+---
+
+### 2. Дизайн-запис: композиція замість глибокої ієрархії класів
+
+**Як виглядала б наївна ієрархія спадкування:**
+Якби ми описували поведінки через класи, дерево швидко розрослося б і зламалося на перетині фіч:
+
+- `Entity` → `MovableEntity` → `Projectile` → `HomingProjectile`
+- `Entity` → `Obstacle` → `Asteroid` → `HomingAsteroid`
+- `Entity` → `Pickup` (який не рухається, але бере участь у колізіях і може мати таймер життя).
+
+Щойно з'являється «самонавідний астероїд» або «рухомий pickup із TTL», наслідування змушує дублювати код або плодити міксини й ромбоподібні залежності.
+
+**Чому обрали композицію (`behaviors` + чистий `Entity`):**
+
+- Усі сутності мають лише **один рівень наслідування** від `Entity` (`Ship extends Entity`, `Bullet extends Entity`, `Asteroid extends Entity`, `Pickup extends Entity`, `Particle extends Entity`), а `World` працює з ними уніфіковано через `Map<id, Entity>`.
+- Поведінки (`createTtl`, `createHoming`) — це незалежні функції `(entity, dt, world) => void`, які підключаються у масив `entity.behaviors`.
+- Той самий `createHoming` працює і на кулі (`Bullet`), і на астероїді (`Asteroid`), а `Pickup` залишається легкою сутністю без зайвих гілок у дереві класів.
+
+---
+
+### 3. Перевірка ланцюжка прототипів
+
+Підтверджено в консолі на екземплярі `Ship`:
+
+- `Object.getPrototypeOf(ship) === Ship.prototype` → `true`
+- `Object.getPrototypeOf(Ship.prototype) === Entity.prototype` → `true`
+- `Object.getPrototypeOf(Entity.prototype) === Object.prototype` → `true`
+- `Object.getPrototypeOf(Object.prototype) === null` → `true`
+- `Object.prototype.hasOwnProperty.call(ship, "hp")` → `false` (`#hp` — приватне поле)
+- `Object.prototype.hasOwnProperty.call(ship, "pos")` → `true` (власна властивість екземпляра)
+- `Object.prototype.hasOwnProperty.call(Ship.prototype, "fire")` → `true` (метод на прототипі)

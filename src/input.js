@@ -7,6 +7,7 @@ const TRACKED_CODES = new Set([
 	"ArrowLeft",
 	"ArrowDown",
 	"ArrowRight",
+	"Space",
 ]);
 
 export function createInput(target = window) {
@@ -24,7 +25,6 @@ export function createInput(target = window) {
 	}
 
 	function onBlur() {
-		// Скидаємо залиплі клавіші, якщо юзер перемкнув вкладку/вікно
 		pressed.clear();
 	}
 
@@ -38,6 +38,7 @@ export function createInput(target = window) {
 			brake: pressed.has("KeyS") || pressed.has("ArrowDown"),
 			turnLeft: pressed.has("KeyA") || pressed.has("ArrowLeft"),
 			turnRight: pressed.has("KeyD") || pressed.has("ArrowRight"),
+			fire: pressed.has("Space"),
 		};
 	}
 
