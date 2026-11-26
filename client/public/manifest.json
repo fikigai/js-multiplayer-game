@@ -1,0 +1,12 @@
+{
+  "images": {
+    "ship": "/assets/ship.svg",
+    "bullet": "/assets/bullet.svg",
+    "asteroid": "/assets/asteroid.svg"
+  },
+  "audio": {
+    "fired": "/assets/fire.wav",
+    "hit": "/assets/hit.wav",
+    "exploded": "/assets/explode.wav"
+  }
+}
