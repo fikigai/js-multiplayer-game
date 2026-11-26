@@ -107,3 +107,100 @@ JavaScript виконується в одному потоці (single-threaded 
 - `Object.prototype.hasOwnProperty.call(ship, "hp")` → `false` (`#hp` — приватне поле)
 - `Object.prototype.hasOwnProperty.call(ship, "pos")` → `true` (власна властивість екземпляра)
 - `Object.prototype.hasOwnProperty.call(Ship.prototype, "fire")` → `true` (метод на прототипі)
+
+---
+
+## Lab 03 — Асинхронний JavaScript: Promises, `async/await` і екран завантаження
+
+### 1. Порівняння sequential `await` vs concurrent (`Promise.all`)
+
+- **Sequential (`for ... of` + `await`)**: ~`36.28 ms` для 6 ассетів (кожен наступний запит чекає завершення попереднього).
+- **Concurrent (`Promise.all`)**: ~`27.82 ms` для 6 ассетів (усі запити стартують паралельно, загальний час визначається найповільнішим із них).
+
+---
+
+### 2. П'ять головоломок порядку задач та мікрозадач
+
+#### Головоломка 1 (`Promise` + `setTimeout` всередині `.then`)
+
+```js
+console.log("1");
+setTimeout(() => console.log("2"), 0);
+Promise.resolve()
+	.then(() => {
+		console.log("3");
+		setTimeout(() => console.log("4"), 0);
+	})
+	.then(() => console.log("5"));
+console.log("6");
+```
+
+- **Вивід**: `1`, `6`, `3`, `5`, `2`, `4`
+- **Пояснення**: Спочатку виконується синхронний код (`1`, `6`), далі повністю спустошується черга мікрозадач (`3`, потім ланцюжковий `5`), і лише в черзі макрозадач виконуються таймери (`2`, потім `4`).
+
+#### Головоломка 2 (`async` / `await` і мікрозадачі)
+
+```js
+async function run() {
+	console.log("A");
+	await Promise.resolve();
+	console.log("B");
+}
+console.log("start");
+run();
+Promise.resolve().then(() => console.log("C"));
+console.log("end");
+```
+
+- **Вивід**: `start`, `A`, `end`, `B`, `C`
+- **Пояснення**: Продовження після `await` стає в чергу мікрозадач після завершення поточного синхронного стеку (`start`, `A`, `end`), після чого мікрозадачі виконуються у порядку постановки (`B`, потім `C`).
+
+#### Головоломка 3 (`requestAnimationFrame` vs мікрозадачі та `setTimeout`)
+
+```js
+console.log("init");
+requestAnimationFrame(() => console.log("raf"));
+setTimeout(() => console.log("timeout"), 0);
+Promise.resolve().then(() => console.log("microtask"));
+console.log("sync-end");
+```
+
+- **Вивід**: `init`, `sync-end`, `microtask`, а далі `raf` і `timeout` (залежно від розкладу кадру браузера).
+- **Пояснення**: Мікрозадача виконується одразу після синхронного коду (`init`, `sync-end`, `microtask`), тоді як `requestAnimationFrame` запускається у фазі оновлення кадру рендерингу, а `setTimeout` — як окрема макрозадача.
+
+#### Головоломка 4 (`async` функція без `await` і rejection propagation)
+
+```js
+async function fail() {
+	throw new Error("boom");
+}
+console.log("before");
+fail().catch((err) => console.log("caught:", err.message));
+console.log("after");
+```
+
+- **Вивід**: `before`, `after`, `caught: boom`
+- **Пояснення**: `async`-функція завжди повертає Promise, а викинута помилка переводить його у стан `rejected`, чий `.catch()` обробник спрацьовує асинхронно у черзі мікрозадач після синхронних `before` і `after`.
+
+#### Головоломка 5 (Вкладені мікрозадачі та `setTimeout(..., 0)`)
+
+```js
+setTimeout(() => console.log("T1"), 0);
+Promise.resolve().then(() => {
+	console.log("M1");
+	Promise.resolve().then(() => console.log("M2"));
+});
+setTimeout(() => console.log("T2"), 0);
+```
+
+- **Вивід**: `M1`, `M2`, `T1`, `T2`
+- **Пояснення**: Черга мікрозадач (включно з `M2`, запланованою всередині `M1`) очищується до кінця перед переходом до наступної макрозадачі (`T1`, `T2`).
+
+---
+
+### 3. Галерея збоїв
+
+- **404 спрайта**: `loadImage` перехоплює помилку завантаження (`HttpError 404`) і не робить зайвих ретраїв на `4xx`; на екрані показується помилка і кнопка **Retry**, гра не падає.
+- **Таймаут мережі**: для запиту кімнат (`GET /api/rooms`) використовується `AbortSignal.timeout(...)`; при перевищенні ліміту запит переривається з `TimeoutError`, а лобі показує статус помилки без падіння застосунку.
+- **Abort посеред завантаження**: при виході з лобі або перезапуску завантаження викликається `abort(...)`, що зупиняє очікування і відкидає застарілі оновлення стану.
+- **Битий JSON**: `fetchJson` перевіряє `res.ok` і парсить JSON; при невалідному JSON або HTML замість JSON помилка ловиться у `try/catch` та виводиться з можливістю натиснути **Retry**.

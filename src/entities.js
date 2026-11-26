@@ -20,7 +20,7 @@ export class Ship extends Entity {
 	#fireTimer = 0;
 	#shotCount = 0;
 
-	constructor({ pos, maxHp = SHIP_CONFIG.maxHp, input = null }) {
+	constructor({ pos, maxHp = SHIP_CONFIG.maxHp, input = null, bus = null }) {
 		super({
 			pos,
 			vel: new Vector2(0, 0),
@@ -32,6 +32,7 @@ export class Ship extends Entity {
 		this.#maxHp = maxHp;
 		this.#hp = maxHp;
 		this.input = input;
+		this.bus = bus;
 	}
 
 	get hp() {
@@ -86,7 +87,9 @@ export class Ship extends Entity {
 			behaviors,
 		});
 
-		return world.spawn(bullet);
+		world.spawn(bullet);
+		this.bus?.emit("fired", { shipId: this.id, homing: isHoming });
+		return bullet;
 	}
 
 	update(dt, world) {

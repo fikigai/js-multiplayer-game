@@ -1,0 +1,25 @@
+{
+	"rooms": [
+		{
+			"id": "sector-alpha",
+			"name": "Sector Alpha — Classic Arena",
+			"players": 1,
+			"maxPlayers": 4,
+			"arena": { "asteroids": 5, "pickupHeal": 35 }
+		},
+		{
+			"id": "nebula-rush",
+			"name": "Nebula Rush — Dense Asteroids",
+			"players": 2,
+			"maxPlayers": 4,
+			"arena": { "asteroids": 9, "pickupHeal": 45 }
+		},
+		{
+			"id": "duel-orbit",
+			"name": "Orbit Skirmish — Fast Action",
+			"players": 1,
+			"maxPlayers": 2,
+			"arena": { "asteroids": 4, "pickupHeal": 50 }
+		}
+	]
+}

@@ -10,9 +10,10 @@ function lerpWrap(a, b, alpha, max) {
 	return (((a + diff * alpha) % max) + max) % max;
 }
 
-export function createRenderer(canvas) {
+export function createRenderer(canvas, { sprites = {} } = {}) {
 	const ctx = canvas.getContext("2d");
 	const bounds = { width: 0, height: 0 };
+	let currentSprites = { ...sprites };
 
 	function resize() {
 		const dpr = window.devicePixelRatio || 1;
@@ -29,6 +30,15 @@ export function createRenderer(canvas) {
 
 	resize();
 	window.addEventListener("resize", resize);
+
+	function setSprites(nextSprites = {}) {
+		currentSprites = { ...currentSprites, ...nextSprites };
+	}
+
+	function hasSprite(key) {
+		const img = currentSprites[key];
+		Boolean(img?.complete && img.naturalWidth > 0);
+	}
 
 	function getInterpPos(entity, alpha) {
 		if (!entity.wrapBounds) {
@@ -78,18 +88,23 @@ export function createRenderer(canvas) {
 			ctx.fill();
 		}
 
-		ctx.beginPath();
-		ctx.moveTo(18, 0);
-		ctx.lineTo(-12, -11);
-		ctx.lineTo(-7, 0);
-		ctx.lineTo(-12, 11);
-		ctx.closePath();
+		if (hasSprite("ship")) {
+			const size = 40;
+			ctx.drawImage(currentSprites.ship, -size / 2, -size / 2, size, size);
+		} else {
+			ctx.beginPath();
+			ctx.moveTo(18, 0);
+			ctx.lineTo(-12, -11);
+			ctx.lineTo(-7, 0);
+			ctx.lineTo(-12, 11);
+			ctx.closePath();
 
-		ctx.fillStyle = "#1db954";
-		ctx.fill();
-		ctx.lineWidth = 2;
-		ctx.strokeStyle = "#e8f5e9";
-		ctx.stroke();
+			ctx.fillStyle = "#1db954";
+			ctx.fill();
+			ctx.lineWidth = 2;
+			ctx.strokeStyle = "#e8f5e9";
+			ctx.stroke();
+		}
 
 		ctx.restore();
 	}
@@ -99,33 +114,47 @@ export function createRenderer(canvas) {
 		ctx.translate(x, y);
 		ctx.rotate(angle);
 
-		const sides = 8;
-		ctx.beginPath();
-		for (let i = 0; i < sides; i++) {
-			const a = (Math.PI * 2 * i) / sides;
-			const r = entity.radius * (i % 2 === 0 ? 1 : 0.78);
-			const px = Math.cos(a) * r;
-			const py = Math.sin(a) * r;
-			if (i === 0) ctx.moveTo(px, py);
-			else ctx.lineTo(px, py);
-		}
-		ctx.closePath();
+		if (hasSprite("asteroid")) {
+			const size = entity.radius * 2.2;
+			ctx.drawImage(currentSprites.asteroid, -size / 2, -size / 2, size, size);
+		} else {
+			const sides = 8;
+			ctx.beginPath();
+			for (let i = 0; i < sides; i++) {
+				const a = (Math.PI * 2 * i) / sides;
+				const r = entity.radius * (i % 2 === 0 ? 1 : 0.78);
+				const px = Math.cos(a) * r;
+				const py = Math.sin(a) * r;
+				if (i === 0) ctx.moveTo(px, py);
+				else ctx.lineTo(px, py);
+			}
+			ctx.closePath();
 
-		ctx.fillStyle = "#2b2d42";
-		ctx.fill();
-		ctx.lineWidth = 2;
-		ctx.strokeStyle = "#8d99ae";
-		ctx.stroke();
+			ctx.fillStyle = "#2b2d42";
+			ctx.fill();
+			ctx.lineWidth = 2;
+			ctx.strokeStyle = "#8d99ae";
+			ctx.stroke();
+		}
 
 		ctx.restore();
 	}
 
 	function drawBullet(entity, x, y) {
 		ctx.save();
-		ctx.beginPath();
-		ctx.arc(x, y, entity.radius, 0, Math.PI * 2);
-		ctx.fillStyle = entity.homing ? "#ffbe0b" : "#4cc9f0";
-		ctx.fill();
+		ctx.translate(x, y);
+		ctx.rotate(entity.angle);
+
+		if (!entity.homing && hasSprite("bullet")) {
+			const size = entity.radius * 4;
+			ctx.drawImage(currentSprites.bullet, -size / 2, -size / 2, size, size);
+		} else {
+			ctx.beginPath();
+			ctx.arc(0, 0, entity.radius, 0, Math.PI * 2);
+			ctx.fillStyle = entity.homing ? "#ffbe0b" : "#4cc9f0";
+			ctx.fill();
+		}
+
 		ctx.restore();
 	}
 
@@ -141,7 +170,6 @@ export function createRenderer(canvas) {
 		ctx.strokeStyle = "#1db954";
 		ctx.stroke();
 
-		// Хрестик лікування всередині pickup
 		ctx.strokeStyle = "#e8f5e9";
 		ctx.beginPath();
 		ctx.moveTo(-5, 0);
@@ -167,7 +195,7 @@ export function createRenderer(canvas) {
 	function drawHud(stats, hudState) {
 		ctx.save();
 		ctx.fillStyle = "rgba(0, 0, 0, 0.65)";
-		ctx.fillRect(12, 12, 210, 116);
+		ctx.fillRect(12, 12, 225, 116);
 
 		ctx.font = "13px monospace";
 		ctx.fillStyle = "#e0e0e0";
@@ -178,6 +206,46 @@ export function createRenderer(canvas) {
 		ctx.fillText(`score:    ${hudState.score}`, 22, 92);
 		ctx.fillStyle = hudState.hp > 30 ? "#e8f5e9" : "#ef476f";
 		ctx.fillText(`hp:       ${hudState.hp}`, 22, 112);
+		ctx.restore();
+	}
+
+	function renderLoading(
+		{ ratio = 0, completed = 0, total = 0 } = {},
+		label = "Loading assets...",
+	) {
+		ctx.fillStyle = "#121212";
+		ctx.fillRect(0, 0, bounds.width, bounds.height);
+		drawGrid();
+
+		const barWidth = Math.min(420, Math.max(220, bounds.width * 0.45));
+		const barHeight = 20;
+		const x = (bounds.width - barWidth) / 2;
+		const y = (bounds.height - barHeight) / 2;
+		const clamped = Math.max(0, Math.min(1, ratio));
+
+		ctx.save();
+		ctx.font = "16px monospace";
+		ctx.fillStyle = "#e8f5e9";
+		ctx.textAlign = "center";
+		ctx.fillText(label, bounds.width / 2, y - 24);
+
+		ctx.font = "13px monospace";
+		ctx.fillStyle = "#a0a0a0";
+		ctx.fillText(
+			`${Math.round(clamped * 100)}% (${completed}/${total})`,
+			bounds.width / 2,
+			y + barHeight + 24,
+		);
+
+		ctx.fillStyle = "rgba(255, 255, 255, 0.08)";
+		ctx.fillRect(x, y, barWidth, barHeight);
+
+		ctx.fillStyle = "#1db954";
+		ctx.fillRect(x, y, barWidth * clamped, barHeight);
+
+		ctx.strokeStyle = "#1db954";
+		ctx.lineWidth = 1.5;
+		ctx.strokeRect(x, y, barWidth, barHeight);
 		ctx.restore();
 	}
 
@@ -211,5 +279,5 @@ export function createRenderer(canvas) {
 		window.removeEventListener("resize", resize);
 	}
 
-	return { bounds, render, destroy };
+	return { bounds, setSprites, renderLoading, render, destroy };
 }
